@@ -1,0 +1,271 @@
+import React, { useState } from 'react';
+import { Cloud, Check, Calendar, User, Tag, AlertCircle } from 'lucide-react';
+import { format } from 'date-fns';
+import { fr } from 'date-fns/locale';
+import {
+  GanttProvider,
+  GanttSidebar,
+  GanttSidebarGroup,
+  GanttSidebarItem,
+  GanttTimeline,
+  GanttHeader,
+  GanttFeatureList,
+  GanttFeatureListGroup,
+  GanttFeatureItem,
+  GanttMarker,
+  GanttToday
+} from '../components/ui/kibo-ui/gantt';
+import { Badge } from '../components/ui/badge';
+import { Button } from '../components/ui/button';
+import { Card } from '../components/ui/card';
+import { useTreatmentPlan } from '../contexts/TreatmentPlanContext';
+
+const TreatmentPlanGantt = () => {
+  const {
+    patientInfo,
+    tasks,
+    milestones,
+    dropboxConnected,
+    loading,
+    error,
+    connectToDropbox,
+    moveTask,
+    addTask,
+    getTasksByPhase,
+    getOverallProgress,
+    getOverdueTasks
+  } = useTreatmentPlan();
+
+  // Groupement des tâches par phase
+  const tachesParPhase = getTasksByPhase();
+  
+  // Calcul de la progression globale
+  const progressionGlobale = getOverallProgress();
+  
+  // Tâches en retard
+  const tachesEnRetard = getOverdueTasks();
+
+  // Gestion de la mise à jour des tâches
+  const handleMiseAJourTache = (id, startDate, endDate) => {
+    moveTask(id, startDate, endDate);
+  };
+
+  // Gestion de l'ajout de nouvelles tâches
+  const handleAjouterTache = (date) => {
+    // Exemple d'ajout d'une nouvelle tâche
+    const nouvelleTache = {
+      name: 'Nouvelle tâche',
+      startAt: date,
+      endAt: date,
+      phase: 'Traitement actif',
+      progression: 0
+    };
+    addTask(nouvelleTache);
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Header avec informations patient */}
+      <div className="sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-2">
+                <User className="h-5 w-5 text-gray-500" />
+                <h1 className="text-lg font-semibold text-gray-900">
+                  {patientInfo.nom}
+                </h1>
+              </div>
+              
+              <div className="flex items-center space-x-2 text-sm text-gray-600">
+                <Calendar className="h-4 w-4" />
+                <span>
+                  Devis du {format(patientInfo.dateDevis, 'dd/MM/yyyy', { locale: fr })}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              {patientInfo.tags.map((tag, index) => (
+                <Badge
+                  key={index}
+                  className={`${tag.couleur} text-white`}
+                >
+                  <Tag className="h-3 w-3 mr-1" />
+                  {tag.nom}
+                </Badge>
+              ))}
+              
+              {/* Indicateur de progression globale */}
+              <Badge variant="outline" className="ml-4">
+                Progression: {progressionGlobale}%
+              </Badge>
+              
+              {/* Alerte pour les tâches en retard */}
+              {tachesEnRetard.length > 0 && (
+                <Badge variant="destructive" className="ml-2">
+                  <AlertCircle className="h-3 w-3 mr-1" />
+                  {tachesEnRetard.length} en retard
+                </Badge>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Barre de connexion Dropbox */}
+      <div className="bg-blue-50 border-b border-blue-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-12">
+            <div className="flex items-center space-x-3">
+              <Cloud className="h-5 w-5 text-blue-600" />
+              <span className="text-sm font-medium text-blue-900">
+                Dossier photos patient
+              </span>
+            </div>
+
+            <Button
+              onClick={connectToDropbox}
+              disabled={loading || dropboxConnected}
+              className={`text-sm ${
+                dropboxConnected
+                  ? 'bg-green-600 hover:bg-green-700'
+                  : 'bg-blue-600 hover:bg-blue-700'
+              }`}
+            >
+              {loading ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Connexion...
+                </>
+              ) : dropboxConnected ? (
+                <>
+                  <Check className="h-4 w-4 mr-2" />
+                  Connecté
+                </>
+              ) : (
+                'Connecter au dossier'
+              )}
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Contenu principal avec Gantt */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <Card className="p-6">
+          <div className="mb-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900 mb-2">
+                  Planification du traitement orthodontique
+                </h2>
+                <p className="text-sm text-gray-600">
+                  Visualisez et gérez le planning complet du traitement
+                </p>
+              </div>
+              
+              {/* Statistiques rapides */}
+              <div className="flex items-center space-x-4 text-sm">
+                <div className="text-center">
+                  <div className="font-semibold text-blue-600">{tasks.length}</div>
+                  <div className="text-gray-500">Tâches</div>
+                </div>
+                <div className="text-center">
+                  <div className="font-semibold text-green-600">{progressionGlobale}%</div>
+                  <div className="text-gray-500">Terminé</div>
+                </div>
+                <div className="text-center">
+                  <div className="font-semibold text-purple-600">{milestones.length}</div>
+                  <div className="text-gray-500">Jalons</div>
+                </div>
+              </div>
+            </div>
+            
+            {/* Affichage des erreurs */}
+            {error && (
+              <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-md">
+                <div className="flex items-center">
+                  <AlertCircle className="h-4 w-4 text-red-500 mr-2" />
+                  <span className="text-sm text-red-700">{error}</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <GanttProvider
+            range="monthly"
+            zoom={100}
+            onAddItem={handleAjouterTache}
+            className="h-[600px] border rounded-lg"
+          >
+            <div className="flex h-full">
+              <GanttSidebar className="w-1/3 border-r">
+                {Object.entries(tachesParPhase).map(([phase, taches]) => (
+                  <GanttSidebarGroup key={phase} name={phase}>
+                    {taches.map((tache) => (
+                      <GanttSidebarItem
+                        key={tache.id}
+                        feature={tache}
+                        className="hover:bg-gray-50"
+                      />
+                    ))}
+                  </GanttSidebarGroup>
+                ))}
+              </GanttSidebar>
+
+              <GanttTimeline className="flex-1">
+                <GanttHeader />
+                
+                <GanttFeatureList>
+                  {Object.entries(tachesParPhase).map(([phase, taches]) => (
+                    <GanttFeatureListGroup key={phase}>
+                      {taches.map((tache) => (
+                        <GanttFeatureItem
+                          key={tache.id}
+                          {...tache}
+                          onMove={handleMiseAJourTache}
+                        >
+                          <div className="flex items-center justify-between w-full">
+                            <span className="text-xs font-medium truncate">
+                              {tache.name}
+                            </span>
+                            <div className="flex items-center space-x-2">
+                              <div
+                                className="w-2 h-2 rounded-full"
+                                style={{ backgroundColor: tache.status.color }}
+                              />
+                              <span className="text-xs text-gray-500">
+                                {tache.progression}%
+                              </span>
+                            </div>
+                          </div>
+                        </GanttFeatureItem>
+                      ))}
+                    </GanttFeatureListGroup>
+                  ))}
+                </GanttFeatureList>
+
+                {/* Jalons importants */}
+                {milestones.map((jalon) => (
+                  <GanttMarker
+                    key={jalon.id}
+                    id={jalon.id}
+                    date={jalon.date}
+                    label={jalon.label}
+                    className="bg-purple-100 text-purple-800 border-purple-200"
+                  />
+                ))}
+
+                {/* Marqueur "Aujourd'hui" */}
+                <GanttToday className="bg-red-100 text-red-800 border-red-200" />
+              </GanttTimeline>
+            </div>
+          </GanttProvider>
+        </Card>
+      </div>
+    </div>
+  );
+};
+
+export default TreatmentPlanGantt;

@@ -1,0 +1,620 @@
+import React, { useState, useMemo, useCallback } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { format, addDays, startOfDay, differenceInDays } from 'date-fns';
+import { fr } from 'date-fns/locale';
+import { ArrowLeftIcon, CalendarIcon, ClockIcon, CheckCircleIcon, PlayCircleIcon, EyeIcon, LinkIcon, TrashIcon, ChartBarIcon } from '@heroicons/react/24/outline';
+import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/avatar';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from '../components/ui/context-menu';
+import DurationModal from '../components/ui/DurationModal';
+import groupBy from 'lodash.groupby';
+import {
+  GanttProvider,
+  GanttSidebar,
+  GanttSidebarGroup,
+  GanttSidebarItem,
+  GanttTimeline,
+  GanttHeader,
+  GanttFeatureList,
+  GanttFeatureListGroup,
+  GanttFeatureItem,
+  GanttToday
+} from '../components/ui/kibo-ui/gantt';
+
+// Mock patient data with treatment plans - updated to match example structure
+const mockPatientData = {
+  1: {
+    id: 1,
+    fullName: 'Marie Dubois',
+    treatmentType: 'Orthodontie complète',
+    doctor: 'Dr. Jean Martin',
+    startDate: '2024-01-15',
+    endDate: '2024-06-30',
+    procedures: [
+      {
+        id: 'p1',
+        name: 'Consultation initiale',
+        startAt: new Date('2024-01-15'),
+        endAt: new Date('2024-01-15'),
+        status: { id: 'completed', name: 'Terminé', color: '#10B981' },
+        owner: { id: 'dr1', name: 'Dr. Jean Martin', image: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-1.2.1&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80' },
+        group: { id: 'g1', name: 'Soins d\'urgence' }
+      },
+      {
+        id: 'p2',
+        name: 'Radiographies panoramiques',
+        startAt: new Date('2024-01-20'),
+        endAt: new Date('2024-01-20'),
+        status: { id: 'completed', name: 'Terminé', color: '#10B981' },
+        owner: { id: 'dr1', name: 'Dr. Jean Martin', image: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-1.2.1&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80' },
+        group: { id: 'g1', name: 'Soins d\'urgence' }
+      },
+      {
+        id: 'p3',
+        name: 'Nettoyage dentaire',
+        startAt: new Date('2024-02-01'),
+        endAt: new Date('2024-02-01'),
+        status: { id: 'completed', name: 'Terminé', color: '#10B981' },
+        owner: { id: 'dr1', name: 'Dr. Jean Martin', image: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-1.2.1&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80' },
+        group: { id: 'g1', name: 'Soins d\'urgence' }
+      },
+      {
+        id: 'p4',
+        name: 'Pose d\'appareil orthodontique',
+        startAt: new Date('2024-02-15'),
+        endAt: new Date('2024-02-15'),
+        status: { id: 'in-progress', name: 'En cours', color: '#F59E0B' },
+        owner: { id: 'dr1', name: 'Dr. Jean Martin', image: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-1.2.1&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80' },
+        group: { id: 'g2', name: 'Préparation' }
+      },
+      {
+        id: 'p5',
+        name: 'Ajustement mensuel #1',
+        startAt: new Date('2024-03-15'),
+        endAt: new Date('2024-03-15'),
+        status: { id: 'planned', name: 'Planifié', color: '#6B7280' },
+        owner: { id: 'dr1', name: 'Dr. Jean Martin', image: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-1.2.1&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80' },
+        group: { id: 'g3', name: 'Traitement esthétique' }
+      },
+      {
+        id: 'p6',
+        name: 'Ajustement mensuel #2',
+        startAt: new Date('2024-04-15'),
+        endAt: new Date('2024-04-15'),
+        status: { id: 'planned', name: 'Planifié', color: '#6B7280' },
+        owner: { id: 'dr1', name: 'Dr. Jean Martin', image: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-1.2.1&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80' },
+        group: { id: 'g3', name: 'Traitement esthétique' }
+      },
+      {
+        id: 'p7',
+        name: 'Retrait d\'appareil',
+        startAt: new Date('2024-06-30'),
+        endAt: new Date('2024-06-30'),
+        status: { id: 'planned', name: 'Planifié', color: '#6B7280' },
+        owner: { id: 'dr1', name: 'Dr. Jean Martin', image: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-1.2.1&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80' },
+        group: { id: 'g3', name: 'Traitement esthétique' }
+      }
+    ]
+  },
+  3: {
+    id: 3,
+    fullName: 'Claire Moreau',
+    treatmentType: 'Implants dentaires',
+    doctor: 'Dr. Sophie Leroy',
+    startDate: '2024-02-05',
+    endDate: '2024-08-15',
+    procedures: [
+      {
+        id: 'p8',
+        name: 'Consultation implantologie',
+        startAt: new Date('2024-02-05'),
+        endAt: new Date('2024-02-05'),
+        status: { id: 'completed', name: 'Terminé', color: '#10B981' },
+        owner: { id: 'dr2', name: 'Dr. Sophie Leroy', image: 'https://images.unsplash.com/photo-1494790108755-2616b612b786?ixlib=rb-1.2.1&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80' },
+        group: { id: 'g1', name: 'Soins d\'urgence' }
+      },
+      {
+        id: 'p9',
+        name: 'Scanner 3D',
+        startAt: new Date('2024-02-10'),
+        endAt: new Date('2024-02-10'),
+        status: { id: 'completed', name: 'Terminé', color: '#10B981' },
+        owner: { id: 'dr2', name: 'Dr. Sophie Leroy', image: 'https://images.unsplash.com/photo-1494790108755-2616b612b786?ixlib=rb-1.2.1&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80' },
+        group: { id: 'g1', name: 'Soins d\'urgence' }
+      },
+      {
+        id: 'p10',
+        name: 'Extraction dentaire',
+        startAt: new Date('2024-02-20'),
+        endAt: new Date('2024-02-20'),
+        status: { id: 'completed', name: 'Terminé', color: '#10B981' },
+        owner: { id: 'dr2', name: 'Dr. Sophie Leroy', image: 'https://images.unsplash.com/photo-1494790108755-2616b612b786?ixlib=rb-1.2.1&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80' },
+        group: { id: 'g1', name: 'Soins d\'urgence' }
+      },
+      {
+        id: 'p11',
+        name: 'Cicatrisation',
+        startAt: new Date('2024-02-21'),
+        endAt: new Date('2024-04-15'),
+        status: { id: 'in-progress', name: 'En cours', color: '#F59E0B' },
+        owner: { id: 'dr2', name: 'Dr. Sophie Leroy', image: 'https://images.unsplash.com/photo-1494790108755-2616b612b786?ixlib=rb-1.2.1&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80' },
+        group: { id: 'g2', name: 'Préparation' }
+      },
+      {
+        id: 'p12',
+        name: 'Pose d\'implant',
+        startAt: new Date('2024-04-20'),
+        endAt: new Date('2024-04-20'),
+        status: { id: 'planned', name: 'Planifié', color: '#6B7280' },
+        owner: { id: 'dr2', name: 'Dr. Sophie Leroy', image: 'https://images.unsplash.com/photo-1494790108755-2616b612b786?ixlib=rb-1.2.1&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80' },
+        group: { id: 'g2', name: 'Préparation' }
+      },
+      {
+        id: 'p13',
+        name: 'Pose de couronne',
+        startAt: new Date('2024-08-15'),
+        endAt: new Date('2024-08-15'),
+        status: { id: 'planned', name: 'Planifié', color: '#6B7280' },
+        owner: { id: 'dr2', name: 'Dr. Sophie Leroy', image: 'https://images.unsplash.com/photo-1494790108755-2616b612b786?ixlib=rb-1.2.1&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80' },
+        group: { id: 'g3', name: 'Traitement esthétique' }
+      }
+    ]
+  },
+  5: {
+    id: 5,
+    fullName: 'Isabelle Petit',
+    treatmentType: 'Blanchiment et facettes',
+    doctor: 'Dr. Sophie Durand',
+    startDate: '2024-02-18',
+    endDate: '2024-05-30',
+    procedures: [
+      {
+        id: 'p14',
+        name: 'Consultation esthétique',
+        startAt: new Date('2024-02-18'),
+        endAt: new Date('2024-02-18'),
+        status: { id: 'completed', name: 'Terminé', color: '#10B981' },
+        owner: { id: 'dr3', name: 'Dr. Sophie Durand', image: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?ixlib=rb-1.2.1&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80' },
+        group: { id: 'g1', name: 'Soins d\'urgence' }
+      },
+      {
+        id: 'p15',
+        name: 'Nettoyage professionnel',
+        startAt: new Date('2024-02-25'),
+        endAt: new Date('2024-02-25'),
+        status: { id: 'completed', name: 'Terminé', color: '#10B981' },
+        owner: { id: 'dr3', name: 'Dr. Sophie Durand', image: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?ixlib=rb-1.2.1&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80' },
+        group: { id: 'g1', name: 'Soins d\'urgence' }
+      },
+      {
+        id: 'p16',
+        name: 'Blanchiment dentaire',
+        startAt: new Date('2024-03-10'),
+        endAt: new Date('2024-03-24'),
+        status: { id: 'completed', name: 'Terminé', color: '#10B981' },
+        owner: { id: 'dr3', name: 'Dr. Sophie Durand', image: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?ixlib=rb-1.2.1&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80' },
+        group: { id: 'g2', name: 'Préparation' }
+      },
+      {
+        id: 'p17',
+        name: 'Prise d\'empreintes',
+        startAt: new Date('2024-04-05'),
+        endAt: new Date('2024-04-05'),
+        status: { id: 'in-progress', name: 'En cours', color: '#F59E0B' },
+        owner: { id: 'dr3', name: 'Dr. Sophie Durand', image: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?ixlib=rb-1.2.1&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80' },
+        group: { id: 'g2', name: 'Préparation' }
+      },
+      {
+        id: 'p18',
+        name: 'Pose de facettes',
+        startAt: new Date('2024-05-15'),
+        endAt: new Date('2024-05-15'),
+        status: { id: 'planned', name: 'Planifié', color: '#6B7280' },
+        owner: { id: 'dr3', name: 'Dr. Sophie Durand', image: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?ixlib=rb-1.2.1&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80' },
+        group: { id: 'g3', name: 'Traitement esthétique' }
+      },
+      {
+        id: 'p19',
+        name: 'Contrôle final',
+        startAt: new Date('2024-05-30'),
+        endAt: new Date('2024-05-30'),
+        status: { id: 'planned', name: 'Planifié', color: '#6B7280' },
+        owner: { id: 'dr3', name: 'Dr. Sophie Durand', image: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?ixlib=rb-1.2.1&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80' },
+        group: { id: 'g3', name: 'Traitement esthétique' }
+      }
+    ]
+  }
+};
+
+// Initial markers for important dates
+const initialMarkers = [
+  {
+    id: 'marker-1',
+    date: new Date('2024-03-10'),
+    label: 'Blanchiment dentaire',
+    className: 'bg-blue-100 text-blue-900'
+  },
+  {
+    id: 'marker-2',
+    date: new Date('2024-04-20'),
+    label: 'Pose d\'implant',
+    className: 'bg-green-100 text-green-900'
+  }
+];
+
+// Statuts de traitement pour le Gantt
+const treatmentStatuses = {
+  'not-started': { name: 'Non commencé', color: '#6b7280' },
+  'in-progress': { name: 'En cours', color: '#3b82f6' },
+  'completed': { name: 'Terminé', color: '#10b981' },
+  'on-hold': { name: 'En attente', color: '#f59e0b' }
+};
+
+// Fonction pour obtenir le nom du statut
+const getStatusName = (status) => {
+  return treatmentStatuses[status]?.name || 'Inconnu';
+};
+
+// Fonction pour obtenir la couleur du statut
+const getStatusColor = (status) => {
+  return treatmentStatuses[status]?.color || '#6b7280';
+};
+
+// Transformation des procédures en format Gantt
+const transformProceduresToGanttFeatures = (procedures) => {
+  return procedures.map(procedure => ({
+    id: procedure.id,
+    name: procedure.name,
+    startAt: procedure.startAt,
+    endAt: procedure.endAt,
+    status: {
+      id: procedure.status,
+      name: getStatusName(procedure.status),
+      color: getStatusColor(procedure.status)
+    }
+  }));
+};
+
+// Phases par défaut pour le groupement
+const defaultPhases = [
+  'Préparation',
+  'Traitement Actif',
+  'Suivi',
+  'Finalisation'
+];
+
+// Fonction pour assigner une phase à une procédure
+const assignPhaseToProc = (procedure, index, total) => {
+  const phaseIndex = Math.floor((index / total) * defaultPhases.length);
+  return defaultPhases[Math.min(phaseIndex, defaultPhases.length - 1)];
+};
+
+const TreatmentPlans = () => {
+  const { patientId } = useParams();
+  const navigate = useNavigate();
+  const [procedures, setProcedures] = useState([]);
+  const [markers, setMarkers] = useState(initialMarkers);
+  const [durationModalOpen, setDurationModalOpen] = useState(false);
+  const [selectedProcedureId, setSelectedProcedureId] = useState(null);
+
+  // Get patient data
+  const patientData = mockPatientData[patientId];
+
+
+  // Initialize procedures when patient data is available
+  React.useEffect(() => {
+    if (patientData) {
+      setProcedures(patientData.procedures);
+    }
+  }, [patientData]);
+
+  // Transformation des procédures pour le Gantt
+  const ganttFeatures = useMemo(() => {
+    return transformProceduresToGanttFeatures(procedures);
+  }, [procedures]);
+
+  // Groupement des procédures par phase pour le Gantt
+  const ganttGroupedProcedures = useMemo(() => {
+    const proceduresWithPhases = procedures.map((proc, index) => ({
+      ...proc,
+      phase: assignPhaseToProc(proc, index, procedures.length)
+    }));
+    
+    const ganttFeaturesWithPhases = proceduresWithPhases.map(proc => ({
+      id: proc.id,
+      name: proc.name,
+      startAt: proc.startAt,
+      endAt: proc.endAt,
+      phase: proc.phase,
+      status: {
+        id: proc.status.id,
+        name: getStatusName(proc.status.id),
+        color: getStatusColor(proc.status.id)
+      }
+    }));
+
+    return groupBy(ganttFeaturesWithPhases, 'phase');
+  }, [procedures]);
+
+  // If patient not found or no treatment plan, show message
+  if (!patientData) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="mx-auto h-12 w-12 text-gray-400">
+            <CalendarIcon />
+          </div>
+          <h3 className="mt-2 text-sm font-semibold text-gray-900">Plan de traitement non trouvé</h3>
+          <p className="mt-1 text-sm text-gray-500">
+            Ce patient n'a pas encore de plan de traitement ou l'ID est invalide.
+          </p>
+          <div className="mt-6">
+            <button
+              onClick={() => navigate('/patients')}
+              className="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
+            >
+              <ArrowLeftIcon className="-ml-0.5 mr-1.5 h-5 w-5" />
+              Retour aux patients
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Group procedures by phase using lodash.groupby
+  const groupedProcedures = groupBy(procedures, 'group.name');
+  const sortedGroupedProcedures = Object.fromEntries(
+    Object.entries(groupedProcedures).sort(([nameA], [nameB]) =>
+      nameA.localeCompare(nameB)
+    )
+  );
+
+  // Calculate statistics
+  const stats = useMemo(() => {
+    const total = procedures.length;
+    const completed = procedures.filter(p => p.status.id === 'completed').length;
+    const inProgress = procedures.filter(p => p.status.id === 'in-progress').length;
+    const planned = procedures.filter(p => p.status.id === 'planned').length;
+    
+    return { total, completed, inProgress, planned };
+  }, [procedures]);
+
+
+  // Event handlers following the example structure
+  const handleViewProcedure = (id) => {
+    console.log(`Procédure sélectionnée: ${id}`);
+  };
+
+  const handleCopyLink = (id) => {
+    console.log(`Copier le lien: ${id}`);
+    // Copy link to clipboard
+    navigator.clipboard.writeText(`${window.location.origin}/treatment-plans/${patientId}#${id}`);
+  };
+
+  const handleRemoveProcedure = (id) => {
+    setProcedures((prev) => prev.filter((procedure) => procedure.id !== id));
+    console.log(`Supprimer procédure: ${id}`);
+  };
+
+  const handleRemoveMarker = (id) => {
+    setMarkers((prev) => prev.filter((marker) => marker.id !== id));
+    console.log(`Supprimer marqueur: ${id}`);
+  };
+
+  const handleCreateMarker = (date) => {
+    const newMarker = {
+      id: `marker-${Date.now()}`,
+      date: date,
+      label: 'Nouveau jalon',
+      className: 'bg-purple-100 text-purple-900'
+    };
+    setMarkers((prev) => [...prev, newMarker]);
+    console.log(`Créer marqueur: ${date.toISOString()}`);
+  };
+
+  const handleMoveProcedure = (id, startAt, endAt) => {
+    if (!endAt) return;
+    
+    setProcedures((prev) =>
+      prev.map((procedure) =>
+        procedure.id === id ? { ...procedure, startAt, endAt } : procedure
+      )
+    );
+    console.log(`Déplacer procédure: ${id} de ${startAt} à ${endAt}`);
+  };
+
+  const handleAddProcedure = (date) => {
+    console.log(`Ajouter procédure: ${date.toISOString()}`);
+  };
+
+  const handleDurationClick = (procedureId) => {
+    setSelectedProcedureId(procedureId);
+    setDurationModalOpen(true);
+  };
+
+  const handleDurationSave = (duration, durationType) => {
+    const procedure = procedures.find(p => p.id === selectedProcedureId);
+    if (!procedure) return;
+
+    // Calculer la nouvelle date de fin basée sur la durée
+    const daysToAdd = durationType === 'semaine' ? duration * 7 : duration;
+    const newEndDate = addDays(procedure.startAt, daysToAdd - 1);
+
+    // Mettre à jour la procédure avec une nouvelle référence pour forcer le re-render
+    setProcedures(prev => {
+      const newProcedures = prev.map(p =>
+        p.id === selectedProcedureId
+          ? { ...p, endAt: newEndDate }
+          : p
+      );
+      return [...newProcedures]; // Nouvelle référence d'array
+    });
+
+    // Fermer le modal
+    setDurationModalOpen(false);
+    setSelectedProcedureId(null);
+
+    console.log(`Durée mise à jour pour ${selectedProcedureId}: ${duration} ${durationType}(s)`);
+    console.log(`Nouvelle date de fin: ${newEndDate.toISOString()}`);
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <div className="bg-white shadow-sm border-b border-gray-200">
+        <div className="px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <button
+                onClick={() => navigate('/patients')}
+                className="inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700"
+              >
+                <ArrowLeftIcon className="mr-2 h-4 w-4" />
+                Retour aux patients
+              </button>
+              <div className="h-6 w-px bg-gray-300" />
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">{patientData.fullName}</h1>
+                <p className="text-sm text-gray-500">
+                  {patientData.treatmentType} • {patientData.doctor}
+                </p>
+              </div>
+            </div>
+          </div>
+          
+          {/* Statistics */}
+          <div className="mt-4 pt-4 border-t border-gray-200">
+            <div className="flex items-center justify-center space-x-6">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-gray-900">{stats.total}</div>
+                <div className="text-xs text-gray-500">Procédures totales</div>
+              </div>
+              <div className="text-center">
+                <div className="flex items-center justify-center">
+                  <CheckCircleIcon className="h-5 w-5 text-green-500 mr-1" />
+                  <span className="text-2xl font-bold text-green-600">{stats.completed}</span>
+                </div>
+                <div className="text-xs text-gray-500">Terminées</div>
+              </div>
+              <div className="text-center">
+                <div className="flex items-center justify-center">
+                  <PlayCircleIcon className="h-5 w-5 text-blue-500 mr-1" />
+                  <span className="text-2xl font-bold text-blue-600">{stats.inProgress}</span>
+                </div>
+                <div className="text-xs text-gray-500">En cours</div>
+              </div>
+              <div className="text-center">
+                <div className="flex items-center justify-center">
+                  <ClockIcon className="h-5 w-5 text-gray-400 mr-1" />
+                  <span className="text-2xl font-bold text-gray-600">{stats.planned}</span>
+                </div>
+                <div className="text-xs text-gray-500">Planifiées</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Section Gantt */}
+      <div className="max-w-7xl mx-auto px-6 py-6">
+        <div className="mb-4">
+          <h3 className="text-lg font-semibold text-gray-900">
+            Vue Gantt du Traitement
+          </h3>
+          <p className="text-sm text-gray-600">
+            Visualisation temporelle du plan de traitement
+          </p>
+        </div>
+
+        <GanttProvider
+          range="monthly"
+          zoom={100}
+          onAddItem={handleAddProcedure}
+          className="h-[500px] border rounded-lg"
+        >
+          <div className="flex h-full">
+            <GanttSidebar className="w-1/3 border-r">
+              {Object.entries(ganttGroupedProcedures).map(([phase, procedures]) => (
+                <GanttSidebarGroup key={phase} name={phase}>
+                  {procedures.map((procedure) => (
+                    <GanttSidebarItem
+                      key={procedure.id}
+                      feature={procedure}
+                      className="hover:bg-gray-50"
+                    />
+                  ))}
+                </GanttSidebarGroup>
+              ))}
+            </GanttSidebar>
+
+            <GanttTimeline className="flex-1">
+              <GanttHeader />
+              
+              <GanttFeatureList>
+                {Object.entries(ganttGroupedProcedures).map(([phase, procedures]) => (
+                  <GanttFeatureListGroup key={phase}>
+                    {procedures.map((procedure) => (
+                      <GanttFeatureItem
+                        key={procedure.id}
+                        {...procedure}
+                        onMove={handleMoveProcedure}
+                      >
+                        <div className="flex items-center justify-between w-full">
+                          <span className="text-xs font-medium truncate">
+                            {procedure.name}
+                          </span>
+                          <div className="flex items-center space-x-2">
+                            <div
+                              className="w-2 h-2 rounded-full"
+                              style={{ backgroundColor: procedure.status.color }}
+                            />
+                          </div>
+                        </div>
+                      </GanttFeatureItem>
+                    ))}
+                  </GanttFeatureListGroup>
+                ))}
+              </GanttFeatureList>
+
+              <GanttToday className="bg-red-100 text-red-800 border-red-200" />
+            </GanttTimeline>
+          </div>
+        </GanttProvider>
+      </div>
+
+      {/* Modal de modification de durée */}
+      <DurationModal
+        open={durationModalOpen}
+        onClose={() => {
+          setDurationModalOpen(false);
+          setSelectedProcedureId(null);
+        }}
+        currentDuration={selectedProcedureId ? (() => {
+          const procedure = procedures.find(p => p.id === selectedProcedureId);
+          if (!procedure) return 1;
+          const days = Math.max(1, differenceInDays(procedure.endAt, procedure.startAt) + 1);
+          // Si c'est un multiple de 7 et >= 7, on retourne en semaines
+          return days >= 7 && days % 7 === 0 ? days / 7 : days;
+        })() : 1}
+        currentDurationType={selectedProcedureId ? (() => {
+          const procedure = procedures.find(p => p.id === selectedProcedureId);
+          if (!procedure) return 'jour';
+          const days = Math.max(1, differenceInDays(procedure.endAt, procedure.startAt) + 1);
+          // Si c'est un multiple de 7 et >= 7, c'est probablement en semaines
+          return days >= 7 && days % 7 === 0 ? 'semaine' : 'jour';
+        })() : 'jour'}
+        onSave={handleDurationSave}
+        procedureName={selectedProcedureId ?
+          procedures.find(p => p.id === selectedProcedureId)?.name || '' : ''
+        }
+      />
+    </div>
+  );
+};
+
+export default TreatmentPlans;
